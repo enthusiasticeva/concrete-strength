@@ -1,2 +1,2 @@
 # concrete-strength
-An analysis of the effect of different factors on the strength of concrete.
+This was a group project I did in my third year. It entailed analysisng the effect that different factors had on concrete strength, as well as to build a variety of models (simple linear, full, backwards regression, forwards regression) to determine which one most accurately predictedconcrete strenght. You can read more [here](/DATA2002%20GROUP%20PROJECT%20(1).pdf). To see the code that I contributed to this project, see [my working file](/working_file.html)

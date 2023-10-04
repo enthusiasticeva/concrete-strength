@@ -1,0 +1,344 @@
+---
+title: "CC08E6 Working File"
+author: "mche0929, ejes2694, bngu3994, rsun9520, bsus8711"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+format: 
+  html: 
+    self-contained: true
+    code-fold: true
+    code-tools: true
+    code-line-numbers: true
+    df-print: paged
+table-of-contents: true
+bibliography: bib.bib
+---
+
+# Loading in the Data
+```{r, message=FALSE}
+library(tidyverse)
+```
+
+```{r}
+concrete = readxl::read_xls('Concrete_Data.xls')
+# glimpse(concrete)
+concrete
+```
+
+```{r}
+
+old_names = colnames(concrete)
+new_names = c("cement", "slag", "ash", "water", "superplastic", "coarseagg", "fineagg", "age", "strength")
+
+colnames(concrete) = new_names
+colnames(concrete)
+
+# generating descriptive data
+
+name_combo = bind_cols(New = new_names, Old = old_names)
+name_combo %>% gt::gt()
+
+```
+
+# EDA
+
+# Wrangling and splitting the data
+
+```{r}
+
+# concrete_long = concrete |>
+#   mutate(sample_id = seq(nrow(concrete))) |>
+#   pivot_longer(cols = !c(strength, sample_id), names_to = 'aspect', values_to = 'amount')
+# 
+# concrete_long
+```
+
+# Building models
+```{r}
+library(caret)
+library(tidyverse)
+library(pastecs)
+library(table1)
+library(corrplot)
+library(PerformanceAnalytics)
+library(caret)
+library(leaps)
+library(MASS)
+library(olsrr)
+
+
+train.control <- trainControl(method = "cv", number = 10)
+
+
+# cement had the strongest correlation, so we generate a model with just that.
+cement.model = lm(strength~cement,data=concrete)
+
+# Fit the full model
+full.model <- lm(strength~., data = concrete)
+
+forward.step.model <- train(strength ~., data = concrete,
+                             method = "leapForward", 
+                             tuneGrid = data.frame(nvmax = 1:9),
+                             trControl = train.control)
+
+
+step.model <- stepAIC(full.model, direction = "both", trace = FALSE)
+
+backward.step.model <- train(strength ~., data = concrete,
+                    method = "leapBackward", 
+                    tuneGrid = data.frame(nvmax = 1:9),
+                    trControl = train.control)
+```
+
+```{r}
+summary(forward.step.model$finalModel)
+```
+
+```{r}
+summary(backward.step.model$finalModel)
+```
+
+```{r}
+step.model$formula
+```
+
+#Evaluation
+
+
+# Checking the Cement model
+```{r}
+set.seed(2)
+nrow(concrete)
+
+# allocate data into 10 groups
+fold_id = c(rep(1:10, each = 103))
+concrete$fold_id = sample(fold_id, replace = FALSE)
+head(concrete)
+
+
+k = 10
+
+# we will store the errors for each of the 10 times we train the model (using the 10 training/testing sets)
+cement.model_mse = vector(mode = "numeric", length = k)
+cement.model_mae =  vector(mode = "numeric", length = k)
+
+
+
+# For each of the 10 groups, train on the other 9, then test on the remaining group, store the errors
+for (i in 1:k) {
+  test_set = concrete[fold_id == i,]
+  training_set = concrete[fold_id != i,]
+  
+  cement.model = lm(strength ~ cement, data=training_set)
+  predictions_1 = predict(cement.model, test_set)
+  
+  cement.model_mse[i] = mean((test_set$strength - predictions_1)^2)
+  cement.model_mae[i] = mean(abs(test_set$strength - predictions_1))
+
+}
+
+cv_res = tibble(cement.model_mse, cement.model_mae)
+cv_res
+
+sqrt(mean(cement.model_mse))
+
+mean(cement.model_mae)
+```
+
+# Checking the full model
+```{r}
+set.seed(2)
+nrow(concrete)
+
+# allocate data into 10 groups
+fold_id = c(rep(1:10, each = 103))
+concrete$fold_id = sample(fold_id, replace = FALSE)
+head(concrete)
+
+
+k = 10
+
+# we will store the errors for each of the 10 times we train the model (using the 10 training/testing sets)
+full.model_mse = vector(mode = "numeric", length = k)
+full.model_mae =  vector(mode = "numeric", length = k)
+
+
+
+# For each of the 10 groups, train on the other 9, then test on the remaining group, store the errors
+for (i in 1:k) {
+  test_set = concrete[fold_id == i,]
+  training_set = concrete[fold_id != i,]
+  
+  full.model = lm(strength ~ ., data=training_set)
+  predictions_1 = predict(full.model, test_set)
+  
+  full.model_mse[i] = mean((test_set$strength - predictions_1)^2)
+  full.model_mae[i] = mean(abs(test_set$strength - predictions_1))
+
+}
+
+cv_res = tibble(full.model_mse, full.model_mae)
+cv_res
+
+sqrt(mean(full.model_mse))
+
+mean(full.model_mae)
+```
+
+
+# Checking the forward step model
+```{r}
+set.seed(2)
+nrow(concrete)
+
+# allocate data into 10 groups
+fold_id = c(rep(1:10, each = 103))
+concrete$fold_id = sample(fold_id, replace = FALSE)
+head(concrete)
+
+
+k = 10
+
+# we will store the errors for each of the 10 times we train the model (using the 10 training/testing sets)
+forward.step.model_mse = vector(mode = "numeric", length = k)
+forward.step.model_mae =  vector(mode = "numeric", length = k)
+forward.step.model_makeup =  vector(mode = "complex", length = k)
+
+
+
+# For each of the 10 groups, train on the other 9, then test on the remaining group, store the errors
+for (i in 1:k) {
+  test_set = concrete[fold_id == i,]
+  training_set = concrete[fold_id != i,]
+  
+  forward.step.model <- lm(strength ~ cement + slag + ash + water + superplastic + age, data = concrete)
+  
+  predictions_1 = predict(forward.step.model, test_set)
+  
+  forward.step.model_mse[i] = mean((test_set$strength - predictions_1)^2)
+  forward.step.model_mae[i] = mean(abs(test_set$strength - predictions_1))
+
+}
+
+cv_res = tibble(forward.step.model_mse, forward.step.model_mae)
+cv_res
+
+sqrt(mean(forward.step.model_mse))
+
+mean(forward.step.model_mae)
+```
+
+# Checking the backward step model
+```{r}
+set.seed(2)
+nrow(concrete)
+
+# allocate data into 10 groups
+fold_id = c(rep(1:10, each = 103))
+concrete$fold_id = sample(fold_id, replace = FALSE)
+head(concrete)
+
+
+k = 10
+
+# we will store the errors for each of the 10 times we train the model (using the 10 training/testing sets)
+backward.step.model_mse = vector(mode = "numeric", length = k)
+backward.step.model_mae =  vector(mode = "numeric", length = k)
+
+
+
+# For each of the 10 groups, train on the other 9, then test on the remaining group, store the errors
+for (i in 1:k) {
+  test_set = concrete[fold_id == i,]
+  training_set = concrete[fold_id != i,]
+  
+  backward.step.model <- lm(strength ~ cement + slag + ash + water + superplastic + age + coarseagg + fineagg, data = concrete)
+  predictions_1 = predict(backward.step.model, test_set)
+  
+  backward.step.model_mse[i] = mean((test_set$strength - predictions_1)^2)
+  backward.step.model_mae[i] = mean(abs(test_set$strength - predictions_1))
+
+}
+
+cv_res = tibble(backward.step.model_mse, backward.step.model_mae)
+cv_res
+
+sqrt(mean(backward.step.model_mse))
+
+mean(backward.step.model_mae)
+```
+
+# Checking the two-way AIC model
+```{r}
+set.seed(2)
+nrow(concrete)
+
+# allocate data into 10 groups
+fold_id = c(rep(1:10, each = 103))
+concrete$fold_id = sample(fold_id, replace = FALSE)
+head(concrete)
+
+
+k = 10
+
+# we will store the errors for each of the 10 times we train the model (using the 10 training/testing sets)
+step.model_mse = vector(mode = "numeric", length = k)
+step.model_mae =  vector(mode = "numeric", length = k)
+
+
+
+# For each of the 10 groups, train on the other 9, then test on the remaining group, store the errors
+for (i in 1:k) {
+  test_set = concrete[fold_id == i,]
+  training_set = concrete[fold_id != i,]
+  
+  step.model <- lm(strength ~ cement + slag + ash + water + superplastic + coarseagg + fineagg + age, data = concrete)
+  predictions_1 = predict(step.model, test_set)
+  
+  step.model_mse[i] = mean((test_set$strength - predictions_1)^2)
+  step.model_mae[i] = mean(abs(test_set$strength - predictions_1))
+
+}
+
+cv_res = tibble(step.model_mse, step.model_mae)
+cv_res
+
+sqrt(mean(step.model_mse))
+
+mean(step.model_mae)
+```
+
+```{r}
+data = c(sqrt(mean(cement.model_mse)), mean(cement.model_mae), 
+         sqrt(mean(full.model_mse)), mean(full.model_mae), 
+         sqrt(mean(forward.step.model_mse)), mean(forward.step.model_mae), 
+         sqrt(mean(backward.step.model_mse)), mean(backward.step.model_mae), 
+         sqrt(mean(step.model_mse)), mean(step.model_mae))
+
+rnames = c('cement model', 'full model', 'forward model', 'backward model', 'two way model')
+cnames = c('root mean square of errors', 'mean absolute value of errors')
+
+m = matrix(data = data, byrow = TRUE, nrow = 5,dimnames=list(rnames,cnames))
+m
+```
+
+from the matrix, we can see that the forwards model had the lowest error rates in both measures. 
+
+```{r}
+library(equatiomatic)
+backward.step.model <- lm(strength ~ cement + slag + ash + water + superplastic + age + coarseagg + fineagg, data = concrete)
+extract_eq(backward.step.model, use_coefs = TRUE)
+
+
+summary(backward.step.model)
+
+sjPlot::tab_model(
+  backward.step.model,
+  show.ci = FALSE,
+  dv.labels = "Concrete Strength (MPa)"
+)
+```
+
+---
+nocite: |
+  @*
+---
